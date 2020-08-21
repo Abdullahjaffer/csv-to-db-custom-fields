@@ -17,7 +17,7 @@ const upload = multer({
 });
 const cors = require("cors");
 app.use(express.json());
-app.use(cors({ credentials: true, origin: "http://localhost:3000" }));
+// app.use(cors({ credentials: true, origin: "http://localhost:3000" }));
 const mysql = require("mysql");
 const connection = mysql.createConnection({
     host: "sql7.freemysqlhosting.net",
