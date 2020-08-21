@@ -17,7 +17,7 @@ const upload = multer({
 });
 const cors = require("cors");
 app.use(express.json());
-app.use(cors());
+app.use(cors({ credentials: true, origin: "http://localhost:3000" }));
 const mysql = require("mysql");
 const connection = mysql.createConnection({
     host: "sql7.freemysqlhosting.net",
@@ -98,6 +98,8 @@ app.get("/get/:id", (req, res) => {
 
 app.post("/", upload.single("file"), (req, res, next) => {
     const file = req.file;
+    let errors = [];
+
     if (!file) {
         return res.send("Please upload a file");
     }
@@ -110,7 +112,6 @@ app.post("/", upload.single("file"), (req, res, next) => {
     }
     let area = firstPart[1]["B"];
     let data = [];
-    let errors = [];
     if (!errors.length) {
         result.map((c, i) => {
             let date = undefined;
