@@ -20,10 +20,10 @@ app.use(express.json());
 app.use(cors());
 const mysql = require("mysql");
 const connection = mysql.createConnection({
-    host: "localhost",
-    user: "root",
-    password: "",
-    database: "test2",
+    host: "sql7.freemysqlhosting.net",
+    user: "sql7361610",
+    password: "ewRUUjNWEy",
+    database: "sql7361610",
 });
 
 connection.connect(function (err) {
