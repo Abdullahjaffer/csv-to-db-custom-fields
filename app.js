@@ -5,183 +5,208 @@ const { v4: uuidv4 } = require("uuid");
 const excelToJson = require("convert-excel-to-json");
 const fs = require("fs");
 const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, __dirname + "/uploads/");
-    },
-    filename: function (req, file, cb) {
-        cb(null, Date.now() + "-" + file.originalname);
-    },
+  destination: function (req, file, cb) {
+    cb(null, __dirname + "/uploads/");
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + "-" + file.originalname);
+  },
 });
 const upload = multer({
-    storage: storage,
+  storage: storage,
 });
 const cors = require("cors");
 app.use(express.json());
 // app.use(cors({ credentials: true, origin: "http://localhost:3000" }));
 const mysql = require("mysql");
+const { promisedQuery, promisedSelectQuery } = require("./utils");
 const connection = mysql.createConnection({
-    host: "sql7.freemysqlhosting.net",
-    user: "sql7361610",
-    password: "ewRUUjNWEy",
-    database: "sql7361610",
+  host: "localhost",
+  user: "sammy",
+  password: "password",
+  database: "test",
 });
 
 connection.connect(function (err) {
-    if (err) {
-        console.error("error connecting: " + err.stack);
+  if (err) {
+    console.error("error connecting: " + err.stack);
+    return;
+  }
+
+  console.log("connected as id " + connection.threadId);
+
+  connection.query(
+    `CREATE TABLE IF NOT EXISTS sheet_ids(id int NOT NULL AUTO_INCREMENT PRIMARY KEY, catalog_type varchar(200) NOT NULL, area varchar(200), sheet_name varchar(200) NOT NULL, ad_flag varchar(200), ref varchar(200));`,
+    (err) => {
+      if (err) {
+        console.error("error creating table: " + err.stack);
         return;
+      }
     }
-
-    console.log("connected as id " + connection.threadId);
-
-    connection.query(
-        `CREATE TABLE IF NOT EXISTS sheet_ids(id varchar(36) PRIMARY KEY, catalog_type varchar(200) NOT NULL, area varchar(200) , times_allowed_read int);`,
-        (err) => {
-            if (err) {
-                console.error("error creating table: " + err.stack);
-                return;
-            }
-        }
-    );
-    connection.query(
-        `CREATE TABLE IF NOT EXISTS sheet_data( id INT AUTO_INCREMENT PRIMARY KEY, date varchar(200), type varchar(200) NOT NULL , price varchar(200), ref varchar(36) );`,
-        (err) => {
-            if (err) {
-                console.error("error creating table: " + err.stack);
-                return;
-            }
-        }
-    );
+  );
+  connection.query(
+    `CREATE TABLE IF NOT EXISTS sheet_read_count(id varchar(200) PRIMARY KEY, times_allowed_read INT);`,
+    (err) => {
+      if (err) {
+        console.error("error creating table: " + err.stack);
+        return;
+      }
+    }
+  );
+  connection.query(
+    `CREATE TABLE IF NOT EXISTS sheet_data( id INT AUTO_INCREMENT PRIMARY KEY, date varchar(200), type varchar(200) NOT NULL , price varchar(200), sheet_id_ref INT NOT NULL );`,
+    (err) => {
+      if (err) {
+        console.error("error creating table: " + err.stack);
+        return;
+      }
+    }
+  );
 });
 
 app.use(express.static("build"));
 
-app.get("/get/:id", (req, res) => {
-    let sql = `SELECT * FROM sheet_ids WHERE id = '${req.params.id}'`;
-    console.log(sql);
-    console.log(req.params);
-    connection.query(sql, (err, data) => {
-        if (err) console.log(err);
-        else {
-            if (data.length > 0) {
-                if (data[0].times_allowed_read > 0) {
-                    let sql = `SELECT * FROM sheet_data WHERE ref = '${req.params.id}'`;
-                    connection.query(sql, (err, data) => {
-                        if (err) console.log(err);
-                        res.send({
-                            success: true,
-                            message: data,
-                        });
-                    });
-                    sql = `UPDATE sheet_ids SET times_allowed_read=${
-                        data[0].times_allowed_read - 1
-                    }  WHERE id = '${req.params.id}'`;
-                    connection.query(sql, (err) => {
-                        if (err) console.log(err);
-                        console.log("Decreased allowed times to read");
-                    });
-                } else {
-                    res.send({
-                        success: false,
-                        message: "Maximum downloads exceeded",
-                    });
-                }
-            } else {
-                res.send({
-                    success: false,
-                    message: "No such file",
-                });
-            }
-        }
+app.get("/get/:id", async (req, res) => {
+  try {
+    let id = req.params.id;
+    let sql = `SELECT * FROM sheet_read_count WHERE id = '${id}'`;
+    let selectCountQuery = await promisedSelectQuery(connection, sql);
+    let availableAttempts = selectCountQuery[0].times_allowed_read;
+    if (availableAttempts > 0) {
+      sql = `SELECT id, catalog_type AS CatalogType, ad_flag AS Adflag, area AS Area, sheet_name AS Sheet FROM sheet_ids WHERE ref = '${id}';`;
+      let data = await promisedSelectQuery(connection, sql);
+      let messages = [];
+      for (let x of data) {
+        sql = `SELECT id, date, type, price FROM sheet_data WHERE sheet_id_ref = '${x.id}';`;
+        x.Entries = await promisedSelectQuery(connection, sql);
+        delete x.id;
+        messages.push(x);
+      }
+
+      //   Decrease number of attempts available
+      sql = `UPDATE sheet_read_count SET times_allowed_read=${
+        availableAttempts - 1
+      }  WHERE id = '${req.params.id}'`;
+      await promisedSelectQuery(connection, sql);
+
+      return res.send({
+        ref: id,
+        attempts: availableAttempts - 1,
+        success: true,
+        messages: messages,
+      });
+    } else {
+      return res.send({
+        success: false,
+        message: "Maximum downloads exceeded",
+      });
+    }
+  } catch (e) {
+    console.log(e);
+    return res.send({
+      success: false,
+      message: "No such file",
     });
+  }
 });
 
-app.post("/", upload.single("file"), (req, res, next) => {
-    const file = req.file;
-    let errors = [];
+app.post("/", upload.single("file"), async (req, res, next) => {
+  const file = req.file;
+  let errors = [];
 
-    if (!file) {
-        return res.send("Please upload a file");
-    }
-    const result = excelToJson({
-        sourceFile: __dirname + "/uploads/" + file.filename,
-    }).Sheet1;
-    let firstPart = result.splice(0, 4);
-    if (!firstPart[0]["B"]) {
-        errors.push(`Catalog type is required on B1`);
-    }
-    let area = firstPart[1]["B"];
-    let data = [];
-    if (!errors.length) {
-        result.map((c, i) => {
-            let date = undefined;
-            if (c["A"]) {
-                date = c["A"];
-                delete c["A"];
-            }
-            Object.keys(c).map((d, i) => {
-                let type = firstPart[3][d];
-                let price = c[d];
-                if (price && isNaN(price)) {
-                    errors.push(
-                        `${price} is not a number on line ${d} ${i + 4}`
-                    );
-                }
-                data.push({
-                    date,
-                    type,
-                    price,
-                });
-            });
-        });
-    }
-    if (errors.length) {
-        return res.send({
-            success: false,
-            message: errors,
-        });
-    }
-    let id = "";
-    if (!errors.length) {
-        id = uuidv4();
-        var sql =
-            "INSERT INTO sheet_ids (id, catalog_type, area,  times_allowed_read) VALUES ?";
-        var values = [[id, firstPart[0]["B"], firstPart[1]["B"], 5]];
-        connection.query(sql, [values], function (err) {
-            if (err) {
-                console.log(err);
-                return res.send({
-                    success: false,
-                    message: "Failed to add data to database",
-                });
-            }
-            var sql =
-                "INSERT INTO sheet_data (date, type, price ,ref) VALUES ?";
-            var values = data.map((c) => [...Object.values(c), id]);
-            connection.query(sql, [values], function (err) {
-                if (err) {
-                    console.log(err);
-                    return res.send({
-                        success: false,
-                        message: "Failed to add data to database",
-                    });
-                }
-                return res.send({
-                    success: true,
-                    message: "Data added successfully.",
-                    id: id,
-                });
-            });
-        });
-    }
+  if (!file) {
+    return res.send("Please upload a file");
+  }
 
-    try {
-        fs.unlinkSync(__dirname + "/uploads/" + file.filename);
-    } catch (err) {
-        console.error(err);
+  const excelInJSON = excelToJson({
+    sourceFile: __dirname + "/uploads/" + file.filename,
+  });
+
+  let data = [];
+  let headerData = {};
+  for (let sheet of Object.keys(excelInJSON)) {
+    let result = excelInJSON[sheet];
+    let firstPart = result.splice(0, 5);
+    if (!firstPart[1]["B"]) {
+      errors.push(`Catalog type is required on B1`);
     }
+    headerData[sheet] = {
+      catalog_type: firstPart[1]?.["B"],
+      area: firstPart[0]?.["B"],
+      ad_flag: firstPart[2]?.["B"],
+    };
+    if (!errors.length) {
+      result.map((c, i) => {
+        let date = undefined;
+        if (c["A"]) {
+          date = c["A"];
+          delete c["A"];
+        }
+        Object.keys(c).map((d, i) => {
+          let type = firstPart[4][d];
+          let price = c[d];
+          if (price && isNaN(price)) {
+            errors.push(`${price} is not a number on line ${d} ${i + 5}`);
+          }
+          data.push({
+            date,
+            type,
+            price,
+            sheet_name: sheet,
+          });
+        });
+      });
+    }
+  }
+  if (errors.length) {
+    return res.send({
+      success: false,
+      message: errors,
+    });
+  }
+
+  try {
+    let id = uuidv4();
+    let sql = "INSERT INTO sheet_read_count SET ?";
+    await promisedQuery(connection, sql, {
+      id,
+      times_allowed_read: 5,
+    });
+    for (let sheet of Object.keys(excelInJSON)) {
+      let sql = "INSERT INTO sheet_ids SET ?";
+      let response = await promisedQuery(connection, sql, {
+        ...headerData[sheet],
+        ref: id,
+        sheet_name: sheet,
+      });
+      console.log("added ", sheet);
+      let insertData =
+        "INSERT INTO sheet_data (date, type, price ,sheet_id_ref) VALUES ?";
+      var values = data
+        .filter((el) => el.sheet_name == sheet)
+        .map((el) => ({
+          date: el.date,
+          type: el.type,
+          price: el.price,
+        }))
+        .map((c) => [...Object.values(c), response[0].insertId]);
+      await promisedQuery(connection, insertData, [values]);
+    }
+    fs.unlinkSync(__dirname + "/uploads/" + file.filename);
+    return res.send({
+      success: true,
+      message: "Data added successfully.",
+      id: id,
+    });
+  } catch (e) {
+    console.log(e);
+    return res.send({
+      success: false,
+      message: "Failed to add data to database",
+    });
+  }
 });
 
 app.listen(process.env.PORT || 5000, () => {
-    console.log("listening on ", process.env.PORT || 5000);
+  console.log("listening on ", process.env.PORT || 5000);
 });
