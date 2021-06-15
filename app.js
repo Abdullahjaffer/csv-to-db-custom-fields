@@ -15,26 +15,25 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage: storage,
 });
-const cors = require("cors");
+// const cors = require("cors");
 app.use(express.json());
-app.use(cors({ credentials: true, origin: "http://localhost:3000" }));
+// app.use(cors({ credentials: true, origin: "http://localhost:3000" }));
 const mysql = require("mysql");
 const { promisedQuery, promisedSelectQuery } = require("./utils");
 const connection = mysql.createConnection({
   host: "localhost",
   user: "sammy",
-  password: "password123",
+  password: "password",
   database: "test",
 });
 
 const checkConnectivity = (req, res, next) => {
-  connection.connect((err) => {
-    if (err) {
-      res.status(400).json({ error: "Cannot connect to database" });
-    } else {
-      next();
-    }
-  });
+  console.log(connection.state);
+  if (connection.state !== "disconnected") {
+    next();
+  } else {
+    res.status(400).json({ error: "Cannot connect to database" });
+  }
 };
 
 connection.connect(function (err) {
