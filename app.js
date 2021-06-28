@@ -21,10 +21,10 @@ app.use(express.json());
 const mysql = require("mysql");
 const { promisedQuery, promisedSelectQuery } = require("./utils");
 const connection = mysql.createConnection({
-  host: "localhost",
-  user: "sammy",
-  password: "password",
-  database: "test",
+  host: "remotemysql.com",
+  user: "SqWU9PPkSQ",
+  password: "bdv4tAYTGg",
+  database: "SqWU9PPkSQ",
 });
 
 const checkConnectivity = (req, res, next) => {
