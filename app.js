@@ -144,9 +144,9 @@ app.post(
         errors.push(`Catalog type is required on B1`);
       }
       headerData[sheet] = {
-        catalog_type: firstPart[1]?.["B"],
-        area: firstPart[0]?.["B"],
-        ad_flag: firstPart[2]?.["B"],
+        catalog_type: firstPart[1] && firstPart[1]["B"],
+        area: firstPart[0] && firstPart[0]["B"],
+        ad_flag: firstPart[2] && firstPart[2]["B"],
       };
       if (!errors.length) {
         result.map((c, i) => {
