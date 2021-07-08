@@ -15,9 +15,9 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage: storage,
 });
-// const cors = require("cors");
+const cors = require("cors");
 app.use(express.json());
-// app.use(cors({ credentials: true, origin: "http://localhost:3000" }));
+app.use(cors());
 const mysql = require("mysql");
 const { promisedQuery, promisedSelectQuery } = require("./utils");
 const connection = mysql.createConnection({
